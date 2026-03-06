@@ -54,6 +54,13 @@ type edgePair struct {
 	to   int
 }
 
+func newEdgePair(from, to int) edgePair {
+	if from < to {
+		return edgePair{from: from, to: to}
+	}
+	return edgePair{from: to, to: from}
+}
+
 type subgraph struct {
 	name     string
 	label    graphLabel

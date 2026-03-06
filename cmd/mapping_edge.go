@@ -17,7 +17,7 @@ type edge struct {
 }
 
 func (g *graph) determinePath(e *edge) {
-	key := edgePair{from: e.from.index, to: e.to.index}
+	key := newEdgePair(e.from.index, e.to.index)
 	duplicateIndex := g.edgeCounts[key]
 
 	if startDir, endDir, ok := g.parallelDirections(e, duplicateIndex); ok {

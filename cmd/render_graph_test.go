@@ -102,6 +102,50 @@ func TestRenderGraphSeparatesDuplicateEdgeLabels(t *testing.T) {
 	}
 }
 
+func TestRenderGraphSeparatesBidirectionalEdgeLabelsLR(t *testing.T) {
+	config := diagram.NewTestConfig(true, "cli")
+	output, err := RenderDiagram("graph LR\nA -->|workload exits| B\nB -->|run| A", config)
+	if err != nil {
+		t.Fatalf("RenderDiagram() error = %v", err)
+	}
+
+	if strings.Contains(output, "worklorunexits") {
+		t.Fatalf("expected bidirectional edge labels not to merge\noutput:\n%s", output)
+	}
+	if !strings.Contains(output, "workload") || !strings.Contains(output, "exits") || !strings.Contains(output, "run") {
+		t.Fatalf("expected output to contain both bidirectional edge labels\noutput:\n%s", output)
+	}
+
+	workloadLine := -1
+	runLine := -1
+	for i, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "workload") {
+			workloadLine = i
+		}
+		if strings.Contains(line, "run") {
+			runLine = i
+		}
+	}
+	if workloadLine == -1 || runLine == -1 || workloadLine == runLine {
+		t.Fatalf("expected bidirectional edge labels on separate lines\noutput:\n%s", output)
+	}
+}
+
+func TestRenderGraphSeparatesBidirectionalEdgeLabelsTD(t *testing.T) {
+	config := diagram.NewTestConfig(true, "cli")
+	output, err := RenderDiagram("graph TD\nA -->|forward| B\nB -->|back| A", config)
+	if err != nil {
+		t.Fatalf("RenderDiagram() error = %v", err)
+	}
+
+	if strings.Contains(output, "fbackrd") {
+		t.Fatalf("expected bidirectional edge labels not to merge\noutput:\n%s", output)
+	}
+	if !strings.Contains(output, "forward") || !strings.Contains(output, "back") {
+		t.Fatalf("expected output to contain both bidirectional edge labels\noutput:\n%s", output)
+	}
+}
+
 func assertUniformDisplayWidth(t *testing.T, output string) {
 	t.Helper()
 
