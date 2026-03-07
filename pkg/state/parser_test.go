@@ -169,6 +169,67 @@ func TestScopedPseudostates(t *testing.T) {
 	}
 }
 
+func TestDistinctScopedPseudostatesAcrossComposites(t *testing.T) {
+	input := `stateDiagram-v2
+    state first {
+        [*] --> a
+        a --> [*]
+    }
+    state second {
+        [*] --> b
+        b --> [*]
+    }`
+	sd, err := Parse(input)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	for _, id := range []string{
+		"first___start__",
+		"first___end__",
+		"second___start__",
+		"second___end__",
+	} {
+		if _, ok := sd.States[id]; !ok {
+			t.Errorf("expected state %q", id)
+		}
+	}
+
+	if _, ok := sd.States["__start__"]; ok {
+		t.Error("did not expect global __start__ without a top-level pseudostate")
+	}
+	if _, ok := sd.States["__end__"]; ok {
+		t.Error("did not expect global __end__ without a top-level pseudostate")
+	}
+}
+
+func TestNestedCompositePseudostatesRemainDistinct(t *testing.T) {
+	input := `stateDiagram-v2
+    state outer {
+        [*] --> s1
+        s1 --> [*]
+        state inner {
+            [*] --> s2
+            s2 --> [*]
+        }
+    }`
+	sd, err := Parse(input)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	for _, id := range []string{
+		"outer___start__",
+		"outer___end__",
+		"inner___start__",
+		"inner___end__",
+	} {
+		if _, ok := sd.States[id]; !ok {
+			t.Errorf("expected state %q", id)
+		}
+	}
+}
+
 func TestCompositeStateMembers(t *testing.T) {
 	input := "stateDiagram-v2\n    state \"Main\" as comp {\n        s1 --> s2\n        s2 --> s3\n    }"
 	sd, err := Parse(input)

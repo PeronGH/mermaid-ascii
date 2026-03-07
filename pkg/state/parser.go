@@ -150,7 +150,13 @@ func Parse(input string) (*StateDiagram, error) {
 		// Track states before parsing so we can add new ones to composites
 		statesBefore := len(sd.StateOrder)
 
-		if err := sd.parseLine(trimmed); err != nil {
+		// Determine scope prefix for pseudostate IDs inside composites
+		scope := ""
+		if len(compositeStack) > 0 {
+			scope = compositeStack[len(compositeStack)-1].ID + "_"
+		}
+
+		if err := sd.parseLine(trimmed, scope); err != nil {
 			return nil, fmt.Errorf("line %d: %w", i+2, err)
 		}
 
@@ -170,7 +176,7 @@ func Parse(input string) (*StateDiagram, error) {
 	return sd, nil
 }
 
-func (sd *StateDiagram) parseLine(line string) error {
+func (sd *StateDiagram) parseLine(line string, scope string) error {
 	// Direction directive
 	if match := directionRegex.FindStringSubmatch(line); match != nil {
 		dir := match[1]
@@ -193,8 +199,8 @@ func (sd *StateDiagram) parseLine(line string) error {
 	// Transition: A --> B or A --> B : label
 	if match := transitionRegex.FindStringSubmatch(line); match != nil {
 		fromRaw, toRaw, label := match[1], match[2], match[3]
-		fromID, fromType := resolveStateID(fromRaw, true)
-		toID, toType := resolveStateID(toRaw, false)
+		fromID, fromType := resolveStateID(fromRaw, true, scope)
+		toID, toType := resolveStateID(toRaw, false, scope)
 		sd.ensureState(fromID, fromType)
 		sd.ensureState(toID, toType)
 		sd.Transitions = append(sd.Transitions, &Transition{
@@ -214,12 +220,12 @@ func (sd *StateDiagram) parseLine(line string) error {
 	return fmt.Errorf("unknown syntax: %q", line)
 }
 
-func resolveStateID(raw string, isSource bool) (string, StateType) {
+func resolveStateID(raw string, isSource bool, scope string) (string, StateType) {
 	if raw == "[*]" {
 		if isSource {
-			return "__start__", StateStart
+			return scope + "__start__", StateStart
 		}
-		return "__end__", StateEnd
+		return scope + "__end__", StateEnd
 	}
 	return raw, StateNormal
 }
