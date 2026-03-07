@@ -294,6 +294,9 @@ func (g *graph) createMapping() {
 		g.setColumnWidth(n)
 	}
 
+	// Ensure padding rows/columns are large enough to fit subgraph borders and labels
+	g.adjustGridForSubgraphs()
+
 	for _, e := range g.edges {
 		g.determinePath(e)
 		g.increaseGridSizeForPath(e.path)
@@ -397,6 +400,103 @@ func (g *graph) hasIncomingEdgeFromOutsideSubgraph(n *node) bool {
 	}
 
 	return true
+}
+
+// adjustGridForSubgraphs ensures padding rows and columns are large enough to
+// accommodate subgraph borders and labels. For each subgraph, the padding row
+// above its topmost member node must fit the border + label, and the padding
+// row below its bottommost member node must fit the border. When nested
+// subgraphs share the same boundary row, their overheads accumulate.
+func (g *graph) adjustGridForSubgraphs() {
+	if len(g.subgraphs) == 0 {
+		return
+	}
+
+	const subgraphPadding = 1
+
+	// Accumulate overhead per padding row/column from all subgraphs.
+	topOverhead := map[int]int{}    // padding row -> total overhead from subgraph tops
+	bottomOverhead := map[int]int{} // padding row -> total overhead from subgraph bottoms
+	leftOverhead := map[int]int{}   // padding col -> total overhead from subgraph lefts
+	rightOverhead := map[int]int{}  // padding col -> total overhead from subgraph rights
+
+	for _, sg := range g.subgraphs {
+		if len(sg.nodes) == 0 {
+			continue
+		}
+
+		gridMinX, gridMinY := 1000000, 1000000
+		gridMaxX, gridMaxY := -1000000, -1000000
+		for _, n := range sg.nodes {
+			if n.gridCoord == nil {
+				continue
+			}
+			gridMinX = Min(gridMinX, n.gridCoord.x)
+			gridMinY = Min(gridMinY, n.gridCoord.y)
+			gridMaxX = Max(gridMaxX, n.gridCoord.x+2) // +2: node occupies 3 grid rows
+			gridMaxY = Max(gridMaxY, n.gridCoord.y+2)
+		}
+
+		labelHeight := sg.label.contentHeight()
+
+		// Top boundary (border + label above topmost node)
+		if topRow := gridMinY - 1; topRow >= 0 {
+			if _, ok := g.rowHeight[topRow]; ok {
+				topOverhead[topRow] += subgraphPadding + labelHeight
+			}
+		}
+		// Bottom boundary (border below bottommost node)
+		if bottomRow := gridMaxY + 1; bottomRow >= 0 {
+			if _, ok := g.rowHeight[bottomRow]; ok {
+				bottomOverhead[bottomRow] += subgraphPadding
+			}
+		}
+		// Left boundary
+		if leftCol := gridMinX - 1; leftCol >= 0 {
+			if _, ok := g.columnWidth[leftCol]; ok {
+				leftOverhead[leftCol] += subgraphPadding
+			}
+		}
+		// Right boundary
+		if rightCol := gridMaxX + 1; rightCol >= 0 {
+			if _, ok := g.columnWidth[rightCol]; ok {
+				rightOverhead[rightCol] += subgraphPadding
+			}
+		}
+	}
+
+	// Apply row overheads. Top and bottom overheads on the same row sum because
+	// they extend from opposite sides (one subgraph ending, another starting).
+	allRows := map[int]bool{}
+	for r := range topOverhead {
+		allRows[r] = true
+	}
+	for r := range bottomOverhead {
+		allRows[r] = true
+	}
+	for row := range allRows {
+		needed := topOverhead[row] + bottomOverhead[row]
+		if needed > g.rowHeight[row] {
+			log.Debugf("Increasing rowHeight[%d] from %d to %d for subgraph boundaries", row, g.rowHeight[row], needed)
+			g.rowHeight[row] = needed
+		}
+	}
+
+	// Apply column overheads similarly.
+	allCols := map[int]bool{}
+	for c := range leftOverhead {
+		allCols[c] = true
+	}
+	for c := range rightOverhead {
+		allCols[c] = true
+	}
+	for col := range allCols {
+		needed := leftOverhead[col] + rightOverhead[col]
+		if needed > g.columnWidth[col] {
+			log.Debugf("Increasing columnWidth[%d] from %d to %d for subgraph boundaries", col, g.columnWidth[col], needed)
+			g.columnWidth[col] = needed
+		}
+	}
 }
 
 func (g *graph) ensureSubgraphSpacing() {
