@@ -47,11 +47,9 @@ func stateToGraphProperties(sd *state.StateDiagram, config *diagram.Config) *gra
 		compositeIDs[cs.ID] = true
 	}
 
-	// Add states in insertion order, skipping composite state IDs
-	for _, id := range sd.StateOrder {
-		if compositeIDs[id] {
-			continue
-		}
+	// Add states ordered: start first, normal states, end last.
+	// This ensures the graph layout places start nodes as roots.
+	addState := func(id string) {
 		s := sd.States[id]
 		label := stateLabel(s)
 		nodeSpecs[id] = graphNodeSpec{
@@ -59,6 +57,24 @@ func stateToGraphProperties(sd *state.StateDiagram, config *diagram.Config) *gra
 			labelIsExplicit: true,
 		}
 		data.Set(id, []textEdge{})
+	}
+	for _, id := range sd.StateOrder {
+		if compositeIDs[id] || sd.States[id].Type != state.StateStart {
+			continue
+		}
+		addState(id)
+	}
+	for _, id := range sd.StateOrder {
+		if compositeIDs[id] || sd.States[id].Type != state.StateNormal {
+			continue
+		}
+		addState(id)
+	}
+	for _, id := range sd.StateOrder {
+		if compositeIDs[id] || sd.States[id].Type != state.StateEnd {
+			continue
+		}
+		addState(id)
 	}
 
 	// Build composite member lookup for transition redirection

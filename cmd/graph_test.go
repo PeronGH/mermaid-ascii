@@ -113,4 +113,50 @@ A --> B`
 	}
 }
 
-// Sequence diagram tests moved to sequence_test.go
+func verifyStateDiagram(t *testing.T, testCaseFile string, useAscii bool) {
+	tc, err := testutil.ReadTestCase(testCaseFile)
+	if err != nil {
+		t.Fatalf("Failed to read test case file: %v", err)
+	}
+	config := diagram.NewTestConfig(useAscii, "cli")
+	actual, err := RenderDiagram(tc.Mermaid, config)
+	if err != nil {
+		t.Fatalf("RenderDiagram() error: %v", err)
+	}
+	expected := testutil.NormalizeWhitespace(tc.Expected)
+	actualNorm := testutil.NormalizeWhitespace(actual)
+	if expected != actualNorm {
+		t.Errorf("State diagram didn't match\nExpected:\n%v\nActual:\n%v",
+			testutil.VisualizeWhitespace(expected), testutil.VisualizeWhitespace(actualNorm))
+	}
+}
+
+func TestStateDiagram(t *testing.T) {
+	dir := "testdata/state"
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("Failed to read directory %s: %v", dir, err)
+	}
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".txt") {
+			t.Run(file.Name(), func(t *testing.T) {
+				verifyStateDiagram(t, filepath.Join(dir, file.Name()), false)
+			})
+		}
+	}
+}
+
+func TestStateDiagramASCII(t *testing.T) {
+	dir := "testdata/state-ascii"
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("Failed to read directory %s: %v", dir, err)
+	}
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".txt") {
+			t.Run(file.Name(), func(t *testing.T) {
+				verifyStateDiagram(t, filepath.Join(dir, file.Name()), true)
+			})
+		}
+	}
+}

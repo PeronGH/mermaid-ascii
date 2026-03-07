@@ -1,0 +1,9 @@
+stateDiagram-v2
+    direction LR
+    [*] --> Active
+    Active --> Inactive : stop
+    Inactive --> [*]
+---
++-----+   +--------+      +----------+   +-----+
+| (*) |---> Active |stop--> Inactive |---> (*) |
++-----+   +--------+      +----------+   +-----+
