@@ -77,25 +77,12 @@ func (g *graph) setColumnWidth(n *node) {
 }
 
 func (g *graph) increaseGridSizeForPath(path []gridCoord) {
-	// First pass: create missing grid cells with minimum size
-	newRows := map[int]bool{}
 	for _, c := range path {
 		if _, exists := g.columnWidth[c.x]; !exists {
 			g.columnWidth[c.x] = Max(g.paddingX/2, 1)
 		}
 		if _, exists := g.rowHeight[c.y]; !exists {
-			g.rowHeight[c.y] = 1
-			newRows[c.y] = true
-		}
-	}
-	// Second pass: routing rows where the path transitions vertically
-	// need height 2 so the arrow head and corner don't overlap
-	for i, c := range path {
-		if !newRows[c.y] {
-			continue
-		}
-		if (i > 0 && path[i-1].y != c.y) || (i < len(path)-1 && path[i+1].y != c.y) {
-			g.rowHeight[c.y] = Max(g.rowHeight[c.y], 2)
+			g.rowHeight[c.y] = Max(g.paddingY/2, 1)
 		}
 	}
 }

@@ -113,7 +113,7 @@ func (g *graph) drawArrow(from gridCoord, to gridCoord, e *edge) (*drawing, *dra
 	dLabel := g.drawArrowLabel(e)
 	dPath, linesDrawn, lineDirs := g.drawPath(e.path)
 	dBoxStart := g.drawBoxStart(e.path, linesDrawn[0])
-	dArrowHead := g.drawArrowHead(linesDrawn[len(linesDrawn)-1], lineDirs[len(lineDirs)-1])
+	dArrowHead := g.drawArrowHead(e.path, linesDrawn[len(linesDrawn)-1], lineDirs[len(lineDirs)-1])
 	dCorners := g.drawCorners(e.path)
 	return dPath, dBoxStart, dArrowHead, dCorners, dLabel
 }
@@ -199,7 +199,7 @@ func (g *graph) drawBoxStart(path []gridCoord, firstLine []drawingCoord) *drawin
 	return &d
 }
 
-func (g *graph) drawArrowHead(line []drawingCoord, fallback direction) *drawing {
+func (g *graph) drawArrowHead(path []gridCoord, line []drawingCoord, fallback direction) *drawing {
 	d := *(copyCanvas(g.drawing))
 	if len(line) == 0 {
 		return &d
@@ -210,6 +210,9 @@ func (g *graph) drawArrowHead(line []drawingCoord, fallback direction) *drawing 
 	if len(line) == 1 || dir == Middle {
 		dir = fallback
 	}
+	// Place the arrow head on the destination node's border, mirroring
+	// how drawBoxStart places junction characters on the source border.
+	lastPos = g.gridToDrawingCoord(path[len(path)-1], nil)
 
 	var char string
 	if !g.useAscii {

@@ -3,9 +3,9 @@ ABC --> BCDEFG
 ABC --> CDEFGHI
 ---
 +-----+   +---------+
-| ABC |-->|  BCDEFG |
+| ABC |--->  BCDEFG |
 +-----+   +---------+
    |                 
    |      +---------+
-   +----->| CDEFGHI |
+   +------> CDEFGHI |
           +---------+
