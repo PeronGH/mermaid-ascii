@@ -6,6 +6,7 @@ import (
 
 	"github.com/AlexanderGrooff/mermaid-ascii/pkg/diagram"
 	"github.com/AlexanderGrooff/mermaid-ascii/pkg/sequence"
+	"github.com/AlexanderGrooff/mermaid-ascii/pkg/state"
 )
 
 func DiagramFactory(input string) (diagram.Diagram, error) {
@@ -13,6 +14,10 @@ func DiagramFactory(input string) (diagram.Diagram, error) {
 
 	if sequence.IsSequenceDiagram(input) {
 		return &SequenceDiagram{}, nil
+	}
+
+	if state.IsStateDiagram(input) {
+		return &StateDiagramWrapper{}, nil
 	}
 
 	lines := strings.Split(input, "\n")
