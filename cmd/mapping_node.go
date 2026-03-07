@@ -40,7 +40,7 @@ func (g *graph) setColumnWidth(n *node) {
 	col2 := 2*g.boxBorderPadding + n.label.width
 	col3 := 1
 	colsToBePlaced := []int{col1, col2, col3}
-	rowsToBePlaced := []int{1, n.label.contentHeight() + 2*g.boxBorderPadding, 1} // Border, padding + content, border
+	rowsToBePlaced := []int{1, n.label.contentHeight(), 1} // Border, content, border
 
 	for idx, col := range colsToBePlaced {
 		// Set new width for column if the size increased
@@ -65,7 +65,7 @@ func (g *graph) setColumnWidth(n *node) {
 		// This accounts for subgraph visual overhead (border, label, padding)
 		// and allows arrows to continue as | for longer before becoming arrow heads
 		if g.hasIncomingEdgeFromOutsideSubgraph(n) {
-			const subgraphOverhead = 4
+			const subgraphOverhead = 2
 			basePadding += subgraphOverhead
 			log.Debugf("Adding subgraph overhead of %d to rowHeight before node %s", subgraphOverhead, n.name)
 		}

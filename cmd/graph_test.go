@@ -73,8 +73,8 @@ A --> B`
 	asciiConfig := &diagram.Config{
 		UseAscii:         true,
 		BoxBorderPadding: 1,
-		PaddingBetweenX:  5,
-		PaddingBetweenY:  5,
+		PaddingBetweenX:  3,
+		PaddingBetweenY:  2,
 		GraphDirection:   "LR",
 		StyleType:        "cli",
 	}
@@ -87,8 +87,8 @@ A --> B`
 	unicodeConfig := &diagram.Config{
 		UseAscii:         false,
 		BoxBorderPadding: 1,
-		PaddingBetweenX:  5,
-		PaddingBetweenY:  5,
+		PaddingBetweenX:  3,
+		PaddingBetweenY:  2,
 		GraphDirection:   "LR",
 		StyleType:        "cli",
 	}

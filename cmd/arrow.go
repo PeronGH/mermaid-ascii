@@ -174,23 +174,27 @@ func (g *graph) drawPath(path []gridCoord) (*drawing, [][]drawingCoord, []direct
 
 func (g *graph) drawBoxStart(path []gridCoord, firstLine []drawingCoord) *drawing {
 	d := *(copyCanvas(g.drawing))
-	from := firstLine[0]
 	dir := determineDirection(genericCoord(path[0]), genericCoord(path[1]))
-	log.Debugf("Drawing box start at %v with direction %v for line %v", from, dir, path)
 
 	if g.useAscii {
 		return &d
 	}
 
+	// Place junction directly at the source node's border cell center.
+	// path[0] is always a border cell of the source node, so its drawing
+	// coordinate is the border position regardless of line offsets or padding.
+	borderCoord := g.gridToDrawingCoord(path[0], nil)
+	log.Debugf("Drawing box start at %v with direction %v for line %v", borderCoord, dir, path)
+
 	switch dir {
 	case Up:
-		d[from.x][from.y+1] = "┴"
+		d[borderCoord.x][borderCoord.y] = "┴"
 	case Down:
-		d[from.x][from.y-1] = "┬"
+		d[borderCoord.x][borderCoord.y] = "┬"
 	case Left:
-		d[from.x+1][from.y] = "┤"
+		d[borderCoord.x][borderCoord.y] = "┤"
 	case Right:
-		d[from.x-1][from.y] = "├"
+		d[borderCoord.x][borderCoord.y] = "├"
 	}
 	return &d
 }
