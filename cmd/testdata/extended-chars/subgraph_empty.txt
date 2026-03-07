@@ -1,0 +1,8 @@
+graph LR
+subgraph one
+end
+A --> B
+---
+┌───┐   ┌───┐
+│ A ├──►│ B │
+└───┘   └───┘

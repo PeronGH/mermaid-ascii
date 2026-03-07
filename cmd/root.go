@@ -15,7 +15,7 @@ var Verbose bool
 var Coords bool
 var boxBorderPadding = 1
 var paddingBetweenX = 3
-var paddingBetweenY = 2
+var paddingBetweenY = 1
 var graphDirection = "LR"
 var useAscii = false
 

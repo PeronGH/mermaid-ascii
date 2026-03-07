@@ -74,7 +74,7 @@ A --> B`
 		UseAscii:         true,
 		BoxBorderPadding: 1,
 		PaddingBetweenX:  3,
-		PaddingBetweenY:  2,
+		PaddingBetweenY:  1,
 		GraphDirection:   "LR",
 		StyleType:        "cli",
 	}
@@ -88,7 +88,7 @@ A --> B`
 		UseAscii:         false,
 		BoxBorderPadding: 1,
 		PaddingBetweenX:  3,
-		PaddingBetweenY:  2,
+		PaddingBetweenY:  1,
 		GraphDirection:   "LR",
 		StyleType:        "cli",
 	}

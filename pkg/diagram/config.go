@@ -54,7 +54,7 @@ func DefaultConfig() *Config {
 		// Graph defaults
 		BoxBorderPadding: 1,
 		PaddingBetweenX:  3,
-		PaddingBetweenY:  2,
+		PaddingBetweenY:  1,
 		GraphDirection:   "LR",
 		StyleType:        "cli",
 		// Sequence diagram defaults
@@ -74,7 +74,7 @@ func NewConfig(useAscii bool, graphDirection, styleType string) (*Config, error)
 		Verbose:                    false,
 		BoxBorderPadding:           1,
 		PaddingBetweenX:            3,
-		PaddingBetweenY:            2,
+		PaddingBetweenY:            1,
 		GraphDirection:             graphDirection,
 		StyleType:                  styleType,
 		SequenceParticipantSpacing: 5,

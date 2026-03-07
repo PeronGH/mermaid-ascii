@@ -1,0 +1,18 @@
+graph LR
+subgraph outer
+    subgraph inner
+        A
+    end
+end
+---
+┌───────┐
+│ outer │
+│       │
+│┌─────┐│
+││inner││
+││     ││
+││┌───┐││
+│││ A │││
+││└───┘││
+│└─────┘│
+└───────┘

@@ -29,7 +29,7 @@ type TestCase struct {
 //
 // For sequence diagrams, use ReadSequenceTestCase which doesn't support padding config.
 func ReadTestCase(filePath string) (*TestCase, error) {
-	tc := &TestCase{PaddingX: 3, PaddingY: 2}
+	tc := &TestCase{PaddingX: 3, PaddingY: 1}
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -103,7 +103,7 @@ func ReadSequenceTestCase(filePath string) (*TestCase, error) {
 		Mermaid:  strings.TrimSpace(parts[0]),
 		Expected: strings.TrimSpace(parts[1]),
 		PaddingX: 3,
-		PaddingY: 2,
+		PaddingY: 1,
 	}, nil
 }
 
