@@ -2,9 +2,24 @@ package state
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/AlexanderGrooff/mermaid-ascii/pkg/diagram"
+)
+
+var (
+	// direction LR, direction TB, direction TD
+	directionRegex = regexp.MustCompile(`^\s*direction\s+(LR|RL|TB|TD|BT)\s*$`)
+
+	// s1 --> s2 or s1 --> s2 : label
+	transitionRegex = regexp.MustCompile(`^\s*(\[\*\]|[\w]+)\s*-->\s*(\[\*\]|[\w]+)\s*(?::\s*(.+?))?\s*$`)
+
+	// state "Label" as id
+	stateDeclRegex = regexp.MustCompile(`^\s*state\s+"([^"]+)"\s+as\s+(\w+)\s*$`)
+
+	// bare state identifier
+	bareStateRegex = regexp.MustCompile(`^\s*(\w+)\s*$`)
 )
 
 type StateType int
@@ -93,8 +108,57 @@ func Parse(input string) (*StateDiagram, error) {
 }
 
 func (sd *StateDiagram) parseLine(line string) error {
-	// Placeholder — will be implemented in commit 2
+	// Direction directive
+	if match := directionRegex.FindStringSubmatch(line); match != nil {
+		dir := match[1]
+		if dir == "TD" {
+			dir = "TB"
+		}
+		sd.Direction = dir
+		return nil
+	}
+
+	// State declaration: state "Label" as id
+	if match := stateDeclRegex.FindStringSubmatch(line); match != nil {
+		label := match[1]
+		id := match[2]
+		sd.ensureState(id, StateNormal)
+		sd.States[id].Label = label
+		return nil
+	}
+
+	// Transition: A --> B or A --> B : label
+	if match := transitionRegex.FindStringSubmatch(line); match != nil {
+		fromRaw, toRaw, label := match[1], match[2], match[3]
+		fromID, fromType := resolveStateID(fromRaw, true)
+		toID, toType := resolveStateID(toRaw, false)
+		sd.ensureState(fromID, fromType)
+		sd.ensureState(toID, toType)
+		sd.Transitions = append(sd.Transitions, &Transition{
+			From:  fromID,
+			To:    toID,
+			Label: strings.TrimSpace(label),
+		})
+		return nil
+	}
+
+	// Bare state identifier
+	if match := bareStateRegex.FindStringSubmatch(line); match != nil {
+		sd.ensureState(match[1], StateNormal)
+		return nil
+	}
+
 	return fmt.Errorf("unknown syntax: %q", line)
+}
+
+func resolveStateID(raw string, isSource bool) (string, StateType) {
+	if raw == "[*]" {
+		if isSource {
+			return "__start__", StateStart
+		}
+		return "__end__", StateEnd
+	}
+	return raw, StateNormal
 }
 
 func (sd *StateDiagram) ensureState(id string, stateType StateType) {
