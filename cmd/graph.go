@@ -503,7 +503,7 @@ func (g *graph) calculateSubgraphBoundingBox(sg *subgraph) {
 
 	// Add padding (allow negative coordinates, we'll offset later)
 	const subgraphPadding = 1
-	subgraphLabelSpace := sg.label.contentHeight() + 1
+	subgraphLabelSpace := sg.label.contentHeight()
 	sg.minX = minX - subgraphPadding
 	sg.minY = minY - subgraphPadding - subgraphLabelSpace
 	sg.maxX = maxX + subgraphPadding
