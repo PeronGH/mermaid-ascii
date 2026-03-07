@@ -157,6 +157,61 @@ func TestSequenceDiagramIntegration_ErrorHandling(t *testing.T) {
 	}
 }
 
+// TestStateDiagramIntegration tests end-to-end rendering of state diagrams.
+func TestStateDiagramIntegration(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		wantSubstring []string
+	}{
+		{
+			name: "simple state diagram",
+			input: `stateDiagram-v2
+    [*] --> s1
+    s1 --> s2
+    s2 --> [*]`,
+			wantSubstring: []string{"s1", "s2", "(*)"},
+		},
+		{
+			name: "with transition labels",
+			input: `stateDiagram-v2
+    [*] --> Active : start
+    Active --> Inactive : stop`,
+			wantSubstring: []string{"Active", "Inactive", "start", "stop"},
+		},
+		{
+			name: "labeled states",
+			input: `stateDiagram-v2
+    state "Moving Forward" as s1
+    [*] --> s1`,
+			wantSubstring: []string{"Moving Forward", "(*)"},
+		},
+		{
+			name: "composite state",
+			input: `stateDiagram-v2
+    state comp {
+        s1 --> s2
+    }`,
+			wantSubstring: []string{"s1", "s2", "comp"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := diagram.NewTestConfig(false, "cli")
+			output, err := RenderDiagram(tt.input, config)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			for _, want := range tt.wantSubstring {
+				if !strings.Contains(output, want) {
+					t.Errorf("Output missing expected substring %q\nOutput:\n%s", want, output)
+				}
+			}
+		})
+	}
+}
+
 // TestDiagramFactoryIntegration tests diagram type detection.
 func TestDiagramFactoryIntegration(t *testing.T) {
 	tests := []struct {
@@ -175,6 +230,12 @@ func TestDiagramFactoryIntegration(t *testing.T) {
 			input: `graph LR
     A-->B`,
 			expectedType: "graph",
+		},
+		{
+			name: "state diagram",
+			input: `stateDiagram-v2
+    [*] --> s1`,
+			expectedType: "state",
 		},
 	}
 
