@@ -20,6 +20,15 @@ var (
 
 	// bare state identifier
 	bareStateRegex = regexp.MustCompile(`^\s*(\w+)\s*$`)
+
+	// state "Label" as id {  (composite open with label and alias)
+	compositeOpenLabeledRegex = regexp.MustCompile(`^\s*state\s+"([^"]+)"\s+as\s+(\w+)\s*\{\s*$`)
+
+	// state id {  (composite open, simple)
+	compositeOpenSimpleRegex = regexp.MustCompile(`^\s*state\s+(\w+)\s*\{\s*$`)
+
+	// closing brace
+	closeBraceRegex = regexp.MustCompile(`^\s*\}\s*$`)
 )
 
 type StateType int
@@ -94,14 +103,68 @@ func Parse(input string) (*StateDiagram, error) {
 		Direction:       "TB",
 	}
 
+	var compositeStack []*CompositeState
+
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
+
+		// Closing brace — pop composite stack
+		if closeBraceRegex.MatchString(trimmed) {
+			if len(compositeStack) == 0 {
+				return nil, fmt.Errorf("line %d: unexpected '}'", i+2)
+			}
+			compositeStack = compositeStack[:len(compositeStack)-1]
+			continue
+		}
+
+		// Composite state open with label: state "Label" as id {
+		if match := compositeOpenLabeledRegex.FindStringSubmatch(trimmed); match != nil {
+			cs := &CompositeState{ID: match[2], Label: match[1], Members: []string{}}
+			sd.CompositeStates = append(sd.CompositeStates, cs)
+			sd.ensureState(cs.ID, StateNormal)
+			sd.States[cs.ID].Label = cs.Label
+			if len(compositeStack) > 0 {
+				parent := compositeStack[len(compositeStack)-1]
+				sd.addToComposite(parent, cs.ID)
+			}
+			compositeStack = append(compositeStack, cs)
+			continue
+		}
+
+		// Composite state open simple: state id {
+		if match := compositeOpenSimpleRegex.FindStringSubmatch(trimmed); match != nil {
+			cs := &CompositeState{ID: match[1], Label: match[1], Members: []string{}}
+			sd.CompositeStates = append(sd.CompositeStates, cs)
+			sd.ensureState(cs.ID, StateNormal)
+			if len(compositeStack) > 0 {
+				parent := compositeStack[len(compositeStack)-1]
+				sd.addToComposite(parent, cs.ID)
+			}
+			compositeStack = append(compositeStack, cs)
+			continue
+		}
+
+		// Track states before parsing so we can add new ones to composites
+		statesBefore := len(sd.StateOrder)
+
 		if err := sd.parseLine(trimmed); err != nil {
 			return nil, fmt.Errorf("line %d: %w", i+2, err)
 		}
+
+		// Add newly created states to the active composite
+		if len(compositeStack) > 0 {
+			active := compositeStack[len(compositeStack)-1]
+			for _, id := range sd.StateOrder[statesBefore:] {
+				sd.addToComposite(active, id)
+			}
+		}
+	}
+
+	if len(compositeStack) > 0 {
+		return nil, fmt.Errorf("unclosed composite state: %s", compositeStack[len(compositeStack)-1].ID)
 	}
 
 	return sd, nil
@@ -159,6 +222,15 @@ func resolveStateID(raw string, isSource bool) (string, StateType) {
 		return "__end__", StateEnd
 	}
 	return raw, StateNormal
+}
+
+func (sd *StateDiagram) addToComposite(cs *CompositeState, stateID string) {
+	for _, m := range cs.Members {
+		if m == stateID {
+			return
+		}
+	}
+	cs.Members = append(cs.Members, stateID)
 }
 
 func (sd *StateDiagram) ensureState(id string, stateType StateType) {
