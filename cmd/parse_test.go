@@ -174,3 +174,69 @@ func TestMermaidFileToMapUsesLatestExplicitLabel(t *testing.T) {
 		t.Fatal("expected A label to remain explicit")
 	}
 }
+
+func TestMermaidFileToMapAssignsOwnerFromLexicalSubgraphAfterExternalReference(t *testing.T) {
+	properties, err := mermaidFileToMap("graph LR\nGuest --> FuseServer\nsubgraph arcbox-fs\n    FuseServer --> Worker\nend", "cli")
+	if err != nil {
+		t.Fatalf("mermaidFileToMap() error = %v", err)
+	}
+
+	if len(properties.subgraphs) != 1 {
+		t.Fatalf("subgraphs = %d, want 1", len(properties.subgraphs))
+	}
+
+	sg := properties.subgraphs[0]
+	if properties.nodeOwners["FuseServer"] != sg {
+		t.Fatal("expected FuseServer to belong to arcbox-fs")
+	}
+	if properties.nodeOwners["Worker"] != sg {
+		t.Fatal("expected Worker to belong to arcbox-fs")
+	}
+	if len(sg.directNodes) != 2 || sg.directNodes[0] != "FuseServer" || sg.directNodes[1] != "Worker" {
+		t.Fatalf("directNodes = %#v, want [FuseServer Worker]", sg.directNodes)
+	}
+
+	for _, item := range properties.rootItems {
+		if item.kind == textGraphItemNode && item.nodeName == "FuseServer" {
+			t.Fatal("did not expect FuseServer to remain a top-level item")
+		}
+	}
+}
+
+func TestMermaidFileToMapParsesSubgraphDirectionMetadata(t *testing.T) {
+	properties, err := mermaidFileToMap("graph LR\nsubgraph Group\n    direction TB\n    A --> B\nend", "cli")
+	if err != nil {
+		t.Fatalf("mermaidFileToMap() error = %v", err)
+	}
+
+	if len(properties.subgraphs) != 1 {
+		t.Fatalf("subgraphs = %d, want 1", len(properties.subgraphs))
+	}
+
+	if properties.subgraphs[0].direction != "TD" {
+		t.Fatalf("direction = %q, want %q", properties.subgraphs[0].direction, "TD")
+	}
+	if _, ok := properties.nodeSpecs["direction TB"]; ok {
+		t.Fatal("did not expect direction TB to be parsed as a node")
+	}
+}
+
+func TestMermaidFileToMapKeepsSiblingOwnershipOnCrossSubgraphReference(t *testing.T) {
+	properties, err := mermaidFileToMap("graph LR\nsubgraph Frontend\n    A\nend\nsubgraph Backend\n    B\n    A --> B\nend", "cli")
+	if err != nil {
+		t.Fatalf("mermaidFileToMap() error = %v", err)
+	}
+
+	if len(properties.subgraphs) != 2 {
+		t.Fatalf("subgraphs = %d, want 2", len(properties.subgraphs))
+	}
+
+	frontend := properties.subgraphs[0]
+	backend := properties.subgraphs[1]
+	if properties.nodeOwners["A"] != frontend {
+		t.Fatal("expected A to remain owned by Frontend")
+	}
+	if properties.nodeOwners["B"] != backend {
+		t.Fatal("expected B to remain owned by Backend")
+	}
+}

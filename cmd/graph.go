@@ -30,23 +30,25 @@ func (g graph) lineToDrawing(line []gridCoord) []drawingCoord {
 }
 
 type graph struct {
-	nodes        []*node
-	edges        []*edge
-	drawing      *drawing
-	grid         map[gridCoord]*node
-	edgeCounts   map[edgePair]int
-	columnWidth  map[int]int
-	rowHeight    map[int]int
-	styleClasses map[string]styleClass
-	styleType    string
+	nodes            []*node
+	edges            []*edge
+	drawing          *drawing
+	grid             map[gridCoord]*node
+	edgeCounts       map[edgePair]int
+	columnWidth      map[int]int
+	rowHeight        map[int]int
+	styleClasses     map[string]styleClass
+	styleType        string
 	boxBorderPadding int
 	graphDirection   string
-	paddingX     int
-	paddingY     int
-	subgraphs    []*subgraph
-	offsetX      int
-	offsetY      int
-	useAscii     bool
+	paddingX         int
+	paddingY         int
+	subgraphs        []*subgraph
+	rootItems        []graphItem
+	nodeOwners       map[string]*subgraph
+	offsetX          int
+	offsetY          int
+	useAscii         bool
 }
 
 type edgePair struct {
@@ -62,16 +64,32 @@ func newEdgePair(from, to int) edgePair {
 }
 
 type subgraph struct {
-	name     string
-	label    graphLabel
-	nodes    []*node
-	parent   *subgraph
-	children []*subgraph
+	name        string
+	label       graphLabel
+	nodes       []*node
+	directNodes []*node
+	direction   string
+	items       []graphItem
+	parent      *subgraph
+	children    []*subgraph
 	// Bounding box in drawing coordinates
 	minX int
 	minY int
 	maxX int
 	maxY int
+}
+
+type graphItemKind int
+
+const (
+	graphItemNode graphItemKind = iota
+	graphItemSubgraph
+)
+
+type graphItem struct {
+	kind     graphItemKind
+	node     *node
+	subgraph *subgraph
 }
 
 func mkGraph(data *orderedmap.OrderedMap[string, []textEdge], nodeSpecs map[string]graphNodeSpec) graph {
@@ -124,51 +142,105 @@ func (g *graph) setStyleClasses(properties *graphProperties) {
 	}
 }
 
-func (g *graph) setSubgraphs(textSubgraphs []*textSubgraph) {
+func (g *graph) setSubgraphs(properties *graphProperties) {
 	g.subgraphs = []*subgraph{}
+	g.rootItems = []graphItem{}
+	g.nodeOwners = make(map[string]*subgraph)
 
-	// Convert textSubgraphs to subgraphs with node references
-	for _, tsg := range textSubgraphs {
+	subgraphMap := make(map[*textSubgraph]*subgraph)
+
+	// Convert textSubgraphs to subgraphs with node references.
+	for _, tsg := range properties.subgraphs {
 		sg := &subgraph{
-			name:     tsg.name,
-			label:    tsg.label,
-			nodes:    []*node{},
-			children: []*subgraph{},
+			name:        tsg.name,
+			label:       tsg.label,
+			nodes:       []*node{},
+			directNodes: []*node{},
+			direction:   normalizeFlowDirection(tsg.direction),
+			items:       []graphItem{},
+			children:    []*subgraph{},
 		}
 
-		// Find and add node references
 		for _, nodeName := range tsg.nodes {
 			node, err := g.getNode(nodeName)
 			if err == nil {
 				sg.nodes = append(sg.nodes, node)
 			}
 		}
-
-		g.subgraphs = append(g.subgraphs, sg)
-	}
-
-	// Set up parent-child relationships
-	for i, tsg := range textSubgraphs {
-		sg := g.subgraphs[i]
-
-		// Set parent
-		if tsg.parent != nil {
-			for j, parentTsg := range textSubgraphs {
-				if parentTsg == tsg.parent {
-					sg.parent = g.subgraphs[j]
-					break
-				}
+		for _, nodeName := range tsg.directNodes {
+			node, err := g.getNode(nodeName)
+			if err == nil {
+				sg.directNodes = append(sg.directNodes, node)
 			}
 		}
 
-		// Set children
+		g.subgraphs = append(g.subgraphs, sg)
+		subgraphMap[tsg] = sg
+	}
+
+	for i, tsg := range properties.subgraphs {
+		sg := g.subgraphs[i]
+
+		if tsg.parent != nil {
+			sg.parent = subgraphMap[tsg.parent]
+		}
+
 		for _, childTsg := range tsg.children {
-			for j, checkTsg := range textSubgraphs {
-				if checkTsg == childTsg {
-					sg.children = append(sg.children, g.subgraphs[j])
-					break
+			if child := subgraphMap[childTsg]; child != nil {
+				sg.children = append(sg.children, child)
+			}
+		}
+	}
+
+	for i, tsg := range properties.subgraphs {
+		sg := g.subgraphs[i]
+		for _, item := range tsg.items {
+			switch item.kind {
+			case textGraphItemNode:
+				node, err := g.getNode(item.nodeName)
+				if err == nil {
+					sg.items = append(sg.items, graphItem{
+						kind: graphItemNode,
+						node: node,
+					})
+				}
+			case textGraphItemSubgraph:
+				if child := subgraphMap[item.subgraph]; child != nil {
+					sg.items = append(sg.items, graphItem{
+						kind:     graphItemSubgraph,
+						subgraph: child,
+					})
 				}
 			}
+		}
+	}
+
+	for _, item := range properties.rootItems {
+		switch item.kind {
+		case textGraphItemNode:
+			node, err := g.getNode(item.nodeName)
+			if err == nil {
+				g.rootItems = append(g.rootItems, graphItem{
+					kind: graphItemNode,
+					node: node,
+				})
+			}
+		case textGraphItemSubgraph:
+			if sg := subgraphMap[item.subgraph]; sg != nil {
+				g.rootItems = append(g.rootItems, graphItem{
+					kind:     graphItemSubgraph,
+					subgraph: sg,
+				})
+			}
+		}
+	}
+
+	for nodeName, owner := range properties.nodeOwners {
+		if owner == nil {
+			continue
+		}
+		if sg := subgraphMap[owner]; sg != nil {
+			g.nodeOwners[nodeName] = sg
 		}
 	}
 
@@ -176,7 +248,15 @@ func (g *graph) setSubgraphs(textSubgraphs []*textSubgraph) {
 }
 
 func (g *graph) createMapping() {
-	// Set mapping coord for every node in the graph
+	if len(g.subgraphs) > 0 && len(g.rootItems) > 0 {
+		g.createSubgraphAwareMapping()
+		return
+	}
+	g.createLegacyMapping()
+}
+
+func (g *graph) createLegacyMapping() {
+	// Set mapping coord for every node in the graph.
 	highestPositionPerLevel := []int{}
 	// Init array with 0 values
 	// TODO: I'm sure there's a better way of doing this
@@ -294,7 +374,49 @@ func (g *graph) createMapping() {
 		g.setColumnWidth(n)
 	}
 
-	// Ensure padding rows/columns are large enough to fit subgraph borders and labels
+	g.finishMapping()
+}
+
+func (g *graph) createSubgraphAwareMapping() {
+	g.layoutContainer(g.rootItems, nil, g.graphDirection, gridCoord{x: 0, y: 0})
+
+	maxX := -1
+	maxY := -1
+	for _, n := range g.nodes {
+		if n.gridCoord == nil {
+			continue
+		}
+		maxX = Max(maxX, n.gridCoord.x+2)
+		maxY = Max(maxY, n.gridCoord.y+2)
+	}
+
+	fallback := gridCoord{x: 0, y: 0}
+	if g.graphDirection == "LR" {
+		fallback.y = maxY + 2
+	} else {
+		fallback.x = maxX + 2
+	}
+	for _, n := range g.nodes {
+		if n.gridCoord != nil {
+			continue
+		}
+		g.placeNodeAt(n, fallback)
+		if g.graphDirection == "LR" {
+			fallback.y += 4
+		} else {
+			fallback.x += 4
+		}
+	}
+
+	for _, n := range g.nodes {
+		g.setColumnWidth(n)
+	}
+
+	g.finishMapping()
+}
+
+func (g *graph) finishMapping() {
+	// Ensure padding rows/columns are large enough to fit subgraph borders and labels.
 	g.adjustGridForSubgraphs()
 
 	for _, e := range g.edges {
@@ -313,11 +435,188 @@ func (g *graph) createMapping() {
 	}
 	g.setDrawingSizeToGridConstraints()
 
-	// Calculate subgraph bounding boxes after nodes are positioned
+	// Calculate subgraph bounding boxes after nodes are positioned.
 	g.calculateSubgraphBoundingBoxes()
 
-	// Offset everything if subgraphs have negative coordinates
+	// Offset everything if subgraphs have negative coordinates.
 	g.offsetDrawingForSubgraphs()
+}
+
+func (g *graph) layoutContainer(items []graphItem, sg *subgraph, parentDir string, origin gridCoord) (int, int) {
+	if len(items) == 0 {
+		return 0, 0
+	}
+
+	order, hasOrderingEdges := g.orderedItemIndices(items)
+	effectiveDir := g.containerEffectiveDirection(sg, parentDir)
+	orientation := effectiveDir
+	if sg != nil && sg.direction == "" && !hasOrderingEdges {
+		orientation = "TD"
+	}
+
+	cursor := origin
+	maxX := origin.x - 1
+	maxY := origin.y - 1
+	for _, idx := range order {
+		item := items[idx]
+		itemWidth, itemHeight := 0, 0
+		switch item.kind {
+		case graphItemNode:
+			g.placeNodeAt(item.node, cursor)
+			itemWidth = 3
+			itemHeight = 3
+		case graphItemSubgraph:
+			itemWidth, itemHeight = g.layoutContainer(item.subgraph.items, item.subgraph, effectiveDir, cursor)
+		}
+		if itemWidth == 0 || itemHeight == 0 {
+			continue
+		}
+		maxX = Max(maxX, cursor.x+itemWidth-1)
+		maxY = Max(maxY, cursor.y+itemHeight-1)
+		if orientation == "LR" {
+			cursor.x += itemWidth + 1
+		} else {
+			cursor.y += itemHeight + 1
+		}
+	}
+
+	if maxX < origin.x || maxY < origin.y {
+		return 0, 0
+	}
+	return maxX - origin.x + 1, maxY - origin.y + 1
+}
+
+func (g *graph) orderedItemIndices(items []graphItem) ([]int, bool) {
+	order := make([]int, len(items))
+	for i := range items {
+		order[i] = i
+	}
+	if len(items) <= 1 {
+		return order, false
+	}
+
+	itemIndexByNode := make(map[string]int)
+	for idx, item := range items {
+		for _, itemNode := range g.itemNodes(item) {
+			itemIndexByNode[itemNode.name] = idx
+		}
+	}
+
+	indegree := make([]int, len(items))
+	adjacency := make([]map[int]bool, len(items))
+	hasOrderingEdges := false
+	for _, e := range g.edges {
+		fromIdx, okFrom := itemIndexByNode[e.from.name]
+		toIdx, okTo := itemIndexByNode[e.to.name]
+		if !okFrom || !okTo || fromIdx == toIdx {
+			continue
+		}
+		if adjacency[fromIdx] == nil {
+			adjacency[fromIdx] = make(map[int]bool)
+		}
+		if adjacency[fromIdx][toIdx] {
+			continue
+		}
+		adjacency[fromIdx][toIdx] = true
+		indegree[toIdx]++
+		hasOrderingEdges = true
+	}
+	if !hasOrderingEdges {
+		return order, false
+	}
+
+	queue := []int{}
+	for idx, deg := range indegree {
+		if deg == 0 {
+			queue = append(queue, idx)
+		}
+	}
+
+	sorted := []int{}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		sorted = append(sorted, current)
+		for next := range items {
+			if adjacency[current] == nil || !adjacency[current][next] {
+				continue
+			}
+			indegree[next]--
+			if indegree[next] == 0 {
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	if len(sorted) != len(items) {
+		return order, true
+	}
+	return sorted, true
+}
+
+func (g *graph) itemNodes(item graphItem) []*node {
+	switch item.kind {
+	case graphItemNode:
+		if item.node == nil {
+			return nil
+		}
+		return []*node{item.node}
+	case graphItemSubgraph:
+		if item.subgraph == nil {
+			return nil
+		}
+		return item.subgraph.nodes
+	default:
+		return nil
+	}
+}
+
+func (g *graph) containerEffectiveDirection(sg *subgraph, parentDir string) string {
+	dir := normalizeFlowDirection(parentDir)
+	if sg == nil {
+		return dir
+	}
+	if sg.direction != "" && !g.subgraphHasBoundaryEdges(sg) {
+		return sg.direction
+	}
+	return dir
+}
+
+func (g *graph) subgraphHasBoundaryEdges(sg *subgraph) bool {
+	for _, e := range g.edges {
+		fromInside := g.nodeBelongsToSubgraph(e.from, sg)
+		toInside := g.nodeBelongsToSubgraph(e.to, sg)
+		if fromInside != toInside {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *graph) nodeBelongsToSubgraph(n *node, sg *subgraph) bool {
+	owner := g.getNodeSubgraph(n)
+	for owner != nil {
+		if owner == sg {
+			return true
+		}
+		owner = owner.parent
+	}
+	return false
+}
+
+func (g *graph) placeNodeAt(n *node, requested gridCoord) {
+	if n == nil || n.gridCoord != nil {
+		return
+	}
+
+	log.Debugf("Placing node %s at %v", n.name, requested)
+	for x := 0; x < 3; x++ {
+		for y := 0; y < 3; y++ {
+			g.grid[gridCoord{x: requested.x + x, y: requested.y + y}] = n
+		}
+	}
+	coord := requested
+	n.gridCoord = &coord
 }
 
 func (g *graph) calculateSubgraphBoundingBoxes() {
@@ -332,25 +631,23 @@ func (g *graph) calculateSubgraphBoundingBoxes() {
 }
 
 func (g *graph) isNodeInAnySubgraph(n *node) bool {
-	for _, sg := range g.subgraphs {
-		for _, sgNode := range sg.nodes {
-			if sgNode == n {
-				return true
-			}
-		}
-	}
-	return false
+	return g.getNodeSubgraph(n) != nil
 }
 
 func (g *graph) getNodeSubgraph(n *node) *subgraph {
-	for _, sg := range g.subgraphs {
-		for _, sgNode := range sg.nodes {
-			if sgNode == n {
-				return sg
-			}
+	if g.nodeOwners == nil {
+		return nil
+	}
+	return g.nodeOwners[n.name]
+}
+
+func isSubgraphWithin(candidate, ancestor *subgraph) bool {
+	for current := candidate; current != nil; current = current.parent {
+		if current == ancestor {
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 func (g *graph) hasIncomingEdgeFromOutsideSubgraph(n *node) bool {
@@ -364,8 +661,7 @@ func (g *graph) hasIncomingEdgeFromOutsideSubgraph(n *node) bool {
 	for _, edge := range g.edges {
 		if edge.to == n {
 			sourceSubgraph := g.getNodeSubgraph(edge.from)
-			// If source is not in the same subgraph (or any subgraph), it's from outside
-			if sourceSubgraph != nodeSubgraph {
+			if !isSubgraphWithin(sourceSubgraph, nodeSubgraph) {
 				hasExternalEdge = true
 				break
 			}
@@ -387,7 +683,7 @@ func (g *graph) hasIncomingEdgeFromOutsideSubgraph(n *node) bool {
 		for _, edge := range g.edges {
 			if edge.to == otherNode {
 				sourceSubgraph := g.getNodeSubgraph(edge.from)
-				if sourceSubgraph != nodeSubgraph {
+				if !isSubgraphWithin(sourceSubgraph, nodeSubgraph) {
 					otherHasExternal = true
 					break
 				}

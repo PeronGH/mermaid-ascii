@@ -146,6 +146,90 @@ func TestRenderGraphSeparatesBidirectionalEdgeLabelsTD(t *testing.T) {
 	}
 }
 
+func TestRenderGraphKeepsExternallyReferencedNodeInsideSubgraph(t *testing.T) {
+	config := diagram.NewTestConfig(false, "cli")
+	output, err := RenderDiagram("graph LR\nGuest --> FuseServer\nsubgraph arcbox-fs\n    FuseServer --> Worker\nend", config)
+	if err != nil {
+		t.Fatalf("RenderDiagram() error = %v", err)
+	}
+
+	expected := `           ┌───────────────────────────┐
+           │         arcbox-fs         │
+┌───────┐  │┌────────────┐   ┌────────┐│
+│ Guest ├──┼► FuseServer ├───► Worker ││
+└───────┘  │└────────────┘   └────────┘│
+           └───────────────────────────┘`
+	if output != expected {
+		t.Fatalf("unexpected output\nexpected:\n%s\nactual:\n%s", expected, output)
+	}
+}
+
+func TestRenderGraphStacksDisconnectedSubgraphNodesInTD(t *testing.T) {
+	config := diagram.NewTestConfig(false, "cli")
+	output, err := RenderDiagram("graph TD\nsubgraph arcbox-net\n    Host\n    Bridge\n    Pod\nend", config)
+	if err != nil {
+		t.Fatalf("RenderDiagram() error = %v", err)
+	}
+
+	expected := `┌──────────┐
+│arcbox-net│
+│┌────────┐│
+││  Host  ││
+│└────────┘│
+│          │
+│┌────────┐│
+││ Bridge ││
+│└────────┘│
+│          │
+│┌────────┐│
+││  Pod   ││
+│└────────┘│
+└──────────┘`
+	if output != expected {
+		t.Fatalf("unexpected output\nexpected:\n%s\nactual:\n%s", expected, output)
+	}
+}
+
+func TestRenderGraphUsesLocalSubgraphDirectionWithoutExternalEdges(t *testing.T) {
+	config := diagram.NewTestConfig(false, "cli")
+	output, err := RenderDiagram("graph LR\nsubgraph Group\n    direction TB\n    A\n    B\nend", config)
+	if err != nil {
+		t.Fatalf("RenderDiagram() error = %v", err)
+	}
+
+	expected := `┌─────┐
+│Group│
+│┌───┐│
+││ A ││
+│└───┘│
+│     │
+│┌───┐│
+││ B ││
+│└───┘│
+└─────┘`
+	if output != expected {
+		t.Fatalf("unexpected output\nexpected:\n%s\nactual:\n%s", expected, output)
+	}
+}
+
+func TestRenderGraphIgnoresLocalSubgraphDirectionWithExternalEdges(t *testing.T) {
+	config := diagram.NewTestConfig(false, "cli")
+	output, err := RenderDiagram("graph LR\nsubgraph Group\n    direction TB\n    A --> B\nend\nX --> A", config)
+	if err != nil {
+		t.Fatalf("RenderDiagram() error = %v", err)
+	}
+
+	expected := `       ┌─────────────┐
+       │    Group    │
+┌───┐  │┌───┐   ┌───┐│
+│ X ├──┼► A ├───► B ││
+└───┘  │└───┘   └───┘│
+       └─────────────┘`
+	if output != expected {
+		t.Fatalf("unexpected output\nexpected:\n%s\nactual:\n%s", expected, output)
+	}
+}
+
 func assertUniformDisplayWidth(t *testing.T, output string) {
 	t.Helper()
 

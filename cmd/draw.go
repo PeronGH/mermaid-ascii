@@ -157,7 +157,7 @@ func drawMap(properties *graphProperties) string {
 	g.paddingX = properties.paddingX
 	g.paddingY = properties.paddingY
 	g.useAscii = properties.useAscii
-	g.setSubgraphs(properties.subgraphs)
+	g.setSubgraphs(properties)
 	g.createMapping()
 	d := g.draw()
 	if Coords {

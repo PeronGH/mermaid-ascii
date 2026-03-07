@@ -12,16 +12,18 @@ import (
 )
 
 type graphProperties struct {
-	data           *orderedmap.OrderedMap[string, []textEdge]
-	nodeSpecs      map[string]graphNodeSpec
-	styleClasses   *map[string]styleClass
+	data             *orderedmap.OrderedMap[string, []textEdge]
+	nodeSpecs        map[string]graphNodeSpec
+	styleClasses     *map[string]styleClass
 	boxBorderPadding int
-	graphDirection string
-	styleType      string
-	paddingX       int
-	paddingY       int
-	subgraphs      []*textSubgraph
-	useAscii       bool
+	graphDirection   string
+	styleType        string
+	paddingX         int
+	paddingY         int
+	subgraphs        []*textSubgraph
+	rootItems        []textGraphItem
+	nodeOwners       map[string]*textSubgraph
+	useAscii         bool
 }
 
 type textNode struct {
@@ -32,9 +34,9 @@ type textNode struct {
 }
 
 type graphNodeSpec struct {
-	label            graphLabel
-	labelIsExplicit  bool
-	styleClass       string
+	label           graphLabel
+	labelIsExplicit bool
+	styleClass      string
 }
 
 type textEdge struct {
@@ -43,13 +45,30 @@ type textEdge struct {
 	label  string
 }
 
+type textGraphItemKind int
+
+const (
+	textGraphItemNode textGraphItemKind = iota
+	textGraphItemSubgraph
+)
+
+type textGraphItem struct {
+	kind     textGraphItemKind
+	nodeName string
+	subgraph *textSubgraph
+}
+
 type textSubgraph struct {
-	id       string
-	name     string
-	label    graphLabel
-	nodes    []string
-	parent   *textSubgraph
-	children []*textSubgraph
+	id             string
+	name           string
+	label          graphLabel
+	nodes          []string
+	directNodes    []string
+	direction      string
+	parent         *textSubgraph
+	children       []*textSubgraph
+	items          []textGraphItem
+	mentionedNodes map[string]bool
 }
 
 func parseSubgraphHeader(header string) textSubgraph {
@@ -64,10 +83,24 @@ func parseSubgraphHeader(header string) textSubgraph {
 	}
 
 	return textSubgraph{
-		id:    id,
-		name:  labelText,
-		label: newGraphLabel(labelText),
-		nodes: []string{},
+		id:             id,
+		name:           labelText,
+		label:          newGraphLabel(labelText),
+		nodes:          []string{},
+		directNodes:    []string{},
+		items:          []textGraphItem{},
+		mentionedNodes: map[string]bool{},
+	}
+}
+
+func normalizeFlowDirection(dir string) string {
+	switch strings.ToUpper(strings.TrimSpace(dir)) {
+	case "LR", "RL":
+		return "LR"
+	case "TD", "TB", "BT":
+		return "TD"
+	default:
+		return ""
 	}
 }
 
@@ -197,7 +230,16 @@ func setData(parent textNode, edge textEdge, data *orderedmap.OrderedMap[string,
 	}
 }
 
-func (gp *graphProperties) parseString(line string) ([]textNode, error) {
+func rememberRef(node textNode, refs map[string]textNode) {
+	if refs == nil {
+		return
+	}
+	if _, ok := refs[node.name]; !ok {
+		refs[node.name] = node
+	}
+}
+
+func (gp *graphProperties) parseStringWithRefs(line string, refs map[string]textNode) ([]textNode, error) {
 	log.Debugf("Parsing line: %v", line)
 	var lhs, rhs []textNode
 	var err error
@@ -216,11 +258,15 @@ func (gp *graphProperties) parseString(line string) ([]textNode, error) {
 		{
 			regex: regexp.MustCompile(`(?s)^(.+)\s+-->\s+(.+)$`),
 			handler: func(match []string) ([]textNode, error) {
-				if lhs, err = gp.parseString(match[0]); err != nil {
-					lhs = []textNode{parseNode(match[0])}
+				if lhs, err = gp.parseStringWithRefs(match[0], refs); err != nil {
+					node := parseNode(match[0])
+					lhs = []textNode{node}
+					rememberRef(node, refs)
 				}
-				if rhs, err = gp.parseString(match[1]); err != nil {
-					rhs = []textNode{parseNode(match[1])}
+				if rhs, err = gp.parseStringWithRefs(match[1], refs); err != nil {
+					node := parseNode(match[1])
+					rhs = []textNode{node}
+					rememberRef(node, refs)
 				}
 				return setArrow(lhs, rhs, gp), nil
 			},
@@ -228,11 +274,15 @@ func (gp *graphProperties) parseString(line string) ([]textNode, error) {
 		{
 			regex: regexp.MustCompile(`(?s)^(.+)\s+-->\|(.+)\|\s+(.+)$`),
 			handler: func(match []string) ([]textNode, error) {
-				if lhs, err = gp.parseString(match[0]); err != nil {
-					lhs = []textNode{parseNode(match[0])}
+				if lhs, err = gp.parseStringWithRefs(match[0], refs); err != nil {
+					node := parseNode(match[0])
+					lhs = []textNode{node}
+					rememberRef(node, refs)
 				}
-				if rhs, err = gp.parseString(match[2]); err != nil {
-					rhs = []textNode{parseNode(match[2])}
+				if rhs, err = gp.parseStringWithRefs(match[2], refs); err != nil {
+					node := parseNode(match[2])
+					rhs = []textNode{node}
+					rememberRef(node, refs)
 				}
 				return setArrowWithLabel(lhs, rhs, match[1], gp), nil
 			},
@@ -250,13 +300,15 @@ func (gp *graphProperties) parseString(line string) ([]textNode, error) {
 			handler: func(match []string) ([]textNode, error) {
 				log.Debugf("Found & pattern node %v to %v", match[0], match[1])
 				var node textNode
-				if lhs, err = gp.parseString(match[0]); err != nil {
+				if lhs, err = gp.parseStringWithRefs(match[0], refs); err != nil {
 					node = parseNode(match[0])
 					lhs = []textNode{node}
+					rememberRef(node, refs)
 				}
-				if rhs, err = gp.parseString(match[1]); err != nil {
+				if rhs, err = gp.parseStringWithRefs(match[1], refs); err != nil {
 					node = parseNode(match[1])
 					rhs = []textNode{node}
+					rememberRef(node, refs)
 				}
 				return append(lhs, rhs...), nil
 			},
@@ -271,6 +323,91 @@ func (gp *graphProperties) parseString(line string) ([]textNode, error) {
 		}
 	}
 	return []textNode{}, errors.New("Could not parse line: " + line)
+}
+
+func (gp *graphProperties) parseString(line string) ([]textNode, error) {
+	return gp.parseStringWithRefs(line, nil)
+}
+
+func recordNodeItem(items *[]textGraphItem, seen map[string]bool, nodeName string) {
+	if seen[nodeName] {
+		return
+	}
+	*items = append(*items, textGraphItem{
+		kind:     textGraphItemNode,
+		nodeName: nodeName,
+	})
+	seen[nodeName] = true
+}
+
+func isTextSubgraphAncestor(ancestor, sg *textSubgraph) bool {
+	for current := sg; current != nil; current = current.parent {
+		if current == ancestor {
+			return true
+		}
+	}
+	return false
+}
+
+func assignNodeOwner(owners map[string]*textSubgraph, nodeName string, current *textSubgraph) {
+	if current == nil {
+		return
+	}
+
+	existing := owners[nodeName]
+	switch {
+	case existing == nil:
+		owners[nodeName] = current
+	case existing == current:
+		return
+	case isTextSubgraphAncestor(existing, current):
+		owners[nodeName] = current
+	case isTextSubgraphAncestor(current, existing):
+		return
+	default:
+		// Keep the existing owner when this reference crosses into a sibling subtree.
+		return
+	}
+}
+
+func finalizeTextSubgraph(sg *textSubgraph, owners map[string]*textSubgraph) {
+	for _, child := range sg.children {
+		finalizeTextSubgraph(child, owners)
+	}
+
+	sg.directNodes = []string{}
+	seenDirect := map[string]bool{}
+	finalItems := make([]textGraphItem, 0, len(sg.items))
+	for _, item := range sg.items {
+		switch item.kind {
+		case textGraphItemSubgraph:
+			finalItems = append(finalItems, item)
+		case textGraphItemNode:
+			if owners[item.nodeName] == sg && !seenDirect[item.nodeName] {
+				sg.directNodes = append(sg.directNodes, item.nodeName)
+				finalItems = append(finalItems, item)
+				seenDirect[item.nodeName] = true
+			}
+		}
+	}
+	sg.items = finalItems
+
+	seenNodes := map[string]bool{}
+	sg.nodes = []string{}
+	for _, nodeName := range sg.directNodes {
+		if !seenNodes[nodeName] {
+			sg.nodes = append(sg.nodes, nodeName)
+			seenNodes[nodeName] = true
+		}
+	}
+	for _, child := range sg.children {
+		for _, nodeName := range child.nodes {
+			if !seenNodes[nodeName] {
+				sg.nodes = append(sg.nodes, nodeName)
+				seenNodes[nodeName] = true
+			}
+		}
+	}
 }
 
 func mermaidFileToMap(mermaid, styleType string) (*graphProperties, error) {
@@ -312,6 +449,8 @@ func mermaidFileToMap(mermaid, styleType string) (*graphProperties, error) {
 		paddingX:         paddingBetweenX,
 		paddingY:         paddingBetweenY,
 		subgraphs:        []*textSubgraph{},
+		rootItems:        []textGraphItem{},
+		nodeOwners:       make(map[string]*textSubgraph),
 	}
 
 	// Pick up optional padding directives before the graph definition
@@ -344,9 +483,9 @@ func mermaidFileToMap(mermaid, styleType string) (*graphProperties, error) {
 
 	// First line should either say "graph TD" or "graph LR"
 	switch lines[0] {
-	case "graph LR", "flowchart LR":
+	case "graph LR", "flowchart LR", "graph RL", "flowchart RL":
 		properties.graphDirection = "LR"
-	case "graph TD", "flowchart TD", "graph TB", "flowchart TB":
+	case "graph TD", "flowchart TD", "graph TB", "flowchart TB", "graph BT", "flowchart BT":
 		properties.graphDirection = "TD"
 	default:
 		return &properties, fmt.Errorf("unsupported graph type '%s'. Supported types: graph TD, graph TB, graph LR, flowchart TD, flowchart TB, flowchart LR", lines[0])
@@ -357,6 +496,8 @@ func mermaidFileToMap(mermaid, styleType string) (*graphProperties, error) {
 	subgraphStack := []*textSubgraph{}
 	subgraphRegex := regexp.MustCompile(`^\s*subgraph\s+(.+)$`)
 	endRegex := regexp.MustCompile(`^\s*end\s*$`)
+	directionRegex := regexp.MustCompile(`^\s*direction\s+(LR|RL|TB|TD|BT)\s*$`)
+	rootMentionedNodes := map[string]bool{}
 
 	// Iterate over the lines
 	for _, line := range lines {
@@ -366,11 +507,14 @@ func mermaidFileToMap(mermaid, styleType string) (*graphProperties, error) {
 		if match := subgraphRegex.FindStringSubmatch(trimmedLine); match != nil {
 			header := parseSubgraphHeader(match[1])
 			newSubgraph := &textSubgraph{
-				id:       header.id,
-				name:     header.name,
-				label:    header.label,
-				nodes:    []string{},
-				children: []*textSubgraph{},
+				id:             header.id,
+				name:           header.name,
+				label:          header.label,
+				nodes:          []string{},
+				directNodes:    []string{},
+				children:       []*textSubgraph{},
+				items:          []textGraphItem{},
+				mentionedNodes: map[string]bool{},
 			}
 
 			// Set parent relationship if we're nested
@@ -378,6 +522,15 @@ func mermaidFileToMap(mermaid, styleType string) (*graphProperties, error) {
 				parent := subgraphStack[len(subgraphStack)-1]
 				newSubgraph.parent = parent
 				parent.children = append(parent.children, newSubgraph)
+				parent.items = append(parent.items, textGraphItem{
+					kind:     textGraphItemSubgraph,
+					subgraph: newSubgraph,
+				})
+			} else {
+				properties.rootItems = append(properties.rootItems, textGraphItem{
+					kind:     textGraphItemSubgraph,
+					subgraph: newSubgraph,
+				})
 			}
 
 			subgraphStack = append(subgraphStack, newSubgraph)
@@ -396,18 +549,24 @@ func mermaidFileToMap(mermaid, styleType string) (*graphProperties, error) {
 			continue
 		}
 
-		// Remember nodes before parsing this line
-		existingNodes := make(map[string]bool)
-		for el := data.Front(); el != nil; el = el.Next() {
-			existingNodes[el.Key] = true
+		if match := directionRegex.FindStringSubmatch(trimmedLine); match != nil {
+			dir := normalizeFlowDirection(match[1])
+			if len(subgraphStack) > 0 {
+				subgraphStack[len(subgraphStack)-1].direction = dir
+			} else if dir != "" {
+				properties.graphDirection = dir
+			}
+			continue
 		}
 
 		// Parse nodes and edges normally
-		nodes, err := properties.parseString(line)
+		refs := make(map[string]textNode)
+		nodes, err := properties.parseStringWithRefs(line, refs)
 		if err != nil {
 			log.Debugf("Parsing remaining text to node %v", line)
 			node := parseNode(line)
 			addNode(node, properties.data, properties.nodeSpecs)
+			rememberRef(node, refs)
 		} else {
 			// Ensure all returned nodes are in the map
 			for _, node := range nodes {
@@ -415,29 +574,40 @@ func mermaidFileToMap(mermaid, styleType string) (*graphProperties, error) {
 			}
 		}
 
-		// Add all new nodes to current subgraph(s)
+		currentSubgraph := (*textSubgraph)(nil)
 		if len(subgraphStack) > 0 {
-			for el := data.Front(); el != nil; el = el.Next() {
-				nodeName := el.Key
-				// If this is a new node (wasn't in existingNodes), add it to subgraph
-				if !existingNodes[nodeName] {
-					for _, sg := range subgraphStack {
-						// Check if node is not already in the subgraph
-						found := false
-						for _, n := range sg.nodes {
-							if n == nodeName {
-								found = true
-								break
-							}
-						}
-						if !found {
-							sg.nodes = append(sg.nodes, nodeName)
-							log.Debugf("Added node %s to subgraph %s", nodeName, sg.name)
-						}
-					}
-				}
+			currentSubgraph = subgraphStack[len(subgraphStack)-1]
+		}
+
+		for _, ref := range refs {
+			assignNodeOwner(properties.nodeOwners, ref.name, currentSubgraph)
+			if currentSubgraph != nil {
+				recordNodeItem(&currentSubgraph.items, currentSubgraph.mentionedNodes, ref.name)
+			} else {
+				recordNodeItem(&properties.rootItems, rootMentionedNodes, ref.name)
 			}
 		}
 	}
+
+	for _, sg := range properties.subgraphs {
+		if sg.parent == nil {
+			finalizeTextSubgraph(sg, properties.nodeOwners)
+		}
+	}
+
+	finalRootItems := make([]textGraphItem, 0, len(properties.rootItems))
+	seenRootNodes := map[string]bool{}
+	for _, item := range properties.rootItems {
+		switch item.kind {
+		case textGraphItemSubgraph:
+			finalRootItems = append(finalRootItems, item)
+		case textGraphItemNode:
+			if properties.nodeOwners[item.nodeName] == nil && !seenRootNodes[item.nodeName] {
+				finalRootItems = append(finalRootItems, item)
+				seenRootNodes[item.nodeName] = true
+			}
+		}
+	}
+	properties.rootItems = finalRootItems
 	return &properties, nil
 }

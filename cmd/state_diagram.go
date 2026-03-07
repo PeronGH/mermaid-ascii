@@ -40,6 +40,7 @@ func stateToGraphProperties(sd *state.StateDiagram, config *diagram.Config) *gra
 	data := orderedmap.NewOrderedMap[string, []textEdge]()
 	nodeSpecs := make(map[string]graphNodeSpec)
 	styleClasses := make(map[string]styleClass)
+	nodeOwners := make(map[string]*textSubgraph)
 
 	// Build set of composite state IDs (these become subgraphs, not nodes)
 	compositeIDs := make(map[string]bool)
@@ -113,12 +114,26 @@ func stateToGraphProperties(sd *state.StateDiagram, config *diagram.Config) *gra
 	var subgraphs []*textSubgraph
 
 	for _, cs := range sd.CompositeStates {
+		memberNodes := []string{}
+		items := []textGraphItem{}
+		for _, memberID := range cs.Members {
+			if compositeIDs[memberID] {
+				continue
+			}
+			memberNodes = append(memberNodes, memberID)
+			items = append(items, textGraphItem{
+				kind:     textGraphItemNode,
+				nodeName: memberID,
+			})
+		}
 		sg := &textSubgraph{
-			id:       cs.ID,
-			name:     cs.Label,
-			label:    newGraphLabel(cs.Label),
-			nodes:    cs.Members,
-			children: []*textSubgraph{},
+			id:          cs.ID,
+			name:        cs.Label,
+			label:       newGraphLabel(cs.Label),
+			nodes:       memberNodes,
+			directNodes: memberNodes,
+			items:       items,
+			children:    []*textSubgraph{},
 		}
 		compositeMap[cs.ID] = sg
 		subgraphs = append(subgraphs, sg)
@@ -131,6 +146,12 @@ func stateToGraphProperties(sd *state.StateDiagram, config *diagram.Config) *gra
 			if childSg, ok := compositeMap[memberID]; ok {
 				childSg.parent = sg
 				sg.children = append(sg.children, childSg)
+				sg.items = append(sg.items, textGraphItem{
+					kind:     textGraphItemSubgraph,
+					subgraph: childSg,
+				})
+			} else {
+				nodeOwners[memberID] = sg
 			}
 		}
 	}
@@ -156,6 +177,7 @@ func stateToGraphProperties(sd *state.StateDiagram, config *diagram.Config) *gra
 		paddingX:         config.PaddingBetweenX,
 		paddingY:         config.PaddingBetweenY,
 		subgraphs:        subgraphs,
+		nodeOwners:       nodeOwners,
 		useAscii:         config.UseAscii,
 	}
 }
